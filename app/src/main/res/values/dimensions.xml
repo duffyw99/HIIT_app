@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Task 5 - Section 7.3 minimum touch-target sizes, Section 7.2
+        minimum font sizes.
+
+        NOTE on buttonHeight/buttonWidth/buttonCornerRadius/paddingLarge/
+        paddingStandard: these are plain dp values and read correctly in
+        Compose via dimensionResource(R.dimen.xxx).
+
+        NOTE on textSizeButton/textSizeSecondary: Compose's
+        dimensionResource() always returns Dp, even for a dimension
+        authored here as "sp"; there is no stable Compose API to pull a
+        TextUnit out of an XML resource. These two entries exist so this
+        file matches the requested spec exactly and remains usable by any
+        future non-Compose/View-based code, but Compose screens use the
+        Sp constants in presentation/theme/AppDimensions.kt instead. Keep
+        both files in sync if either changes.
+    -->
+    <dimen name="buttonHeight">56dp</dimen>
+    <dimen name="buttonWidth">100dp</dimen>
+    <dimen name="buttonCornerRadius">8dp</dimen>
+    <dimen name="textSizeButton">28sp</dimen>
+    <dimen name="textSizeSecondary">32sp</dimen>
+    <dimen name="paddingLarge">24dp</dimen>
+    <dimen name="paddingStandard">16dp</dimen>
+</resources>

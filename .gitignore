@@ -1,0 +1,43 @@
+# ============================================================
+# SECRETS — never commit these. Most important entries in this file.
+# ============================================================
+keystore.properties
+*.jks
+*.keystore
+
+# ============================================================
+# Local machine config (SDK path, may contain other local overrides)
+# ============================================================
+local.properties
+
+# ============================================================
+# Build output
+# ============================================================
+*.apk
+*.aab
+*.ap_
+*.dex
+build/
+app/build/
+.gradle/
+
+# ============================================================
+# Android Studio / IntelliJ
+# ============================================================
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ============================================================
+# IDE configs
+# ============================================================
+*.code-workspace
+
+# ============================================================
+# Gradle wrapper JAR is fine to commit (needed for ./gradlew to work
+# without a local Gradle install) — do NOT ignore gradle-wrapper.jar.
+# ============================================================
+

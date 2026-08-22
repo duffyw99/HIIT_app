@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Task 4 - Material 3 dark theme, no light variant.
+
+        Parent is Theme.Material3.Dark.NoActionBar (NOT the DayNight
+        variant) specifically so the theme never adapts to the system's
+        light/dark setting per Section 7.1 ("not toggleable").
+
+        IMPORTANT: this XML theme governs the Activity's window background
+        (visible briefly before Compose draws its first frame), the status
+        bar / navigation bar colors, and any non-Compose UI surface (e.g. a
+        future custom notification layout). It does NOT theme the Compose
+        content itself; MaterialTheme in Compose reads colors from a
+        Kotlin ColorScheme (see presentation/theme/Theme.kt), a completely
+        separate mechanism. Both must be kept in sync manually; this file
+        alone would not change how WorkoutListScreen actually looks.
+    -->
+    <style name="Theme.IntervalTimer" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/accent_neon_blue</item>
+        <item name="colorOnPrimary">@color/background_dark</item>
+        <item name="colorSecondary">@color/accent_bright_green</item>
+        <item name="colorOnSecondary">@color/background_dark</item>
+
+        <item name="android:colorBackground">@color/background_dark</item>
+        <item name="colorSurface">@color/surface_dark</item>
+        <item name="colorOnBackground">@color/on_dark</item>
+        <item name="colorOnSurface">@color/on_dark</item>
+
+        <item name="android:statusBarColor">@color/background_dark</item>
+        <item name="android:navigationBarColor">@color/background_dark</item>
+    </style>
+</resources>

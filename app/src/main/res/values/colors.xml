@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Section 7.1 - Dark mode palette. This is the ONLY palette; the app
+         has no light theme. Mirrored in Kotlin at
+         presentation/theme/Theme.kt for Compose's MaterialTheme; Compose
+         does not read colors from this file. Keep both in sync. -->
+    <color name="background_dark">#121212</color>
+    <color name="surface_dark">#1E1E1E</color>
+    <color name="accent_neon_blue">#00D9FF</color>
+    <color name="accent_bright_green">#00FF41</color>
+    <color name="on_dark">#FFFFFF</color>
+
+    <!-- Section 7.3 - action button color coding, established here so
+         Sessions 6-7 (and the Session 5 notification, if it ever moves to
+         custom RemoteViews) all draw from the same values. -->
+    <color name="action_destructive_red">#FF5252</color>
+    <color name="action_amber_warning">#FFC107</color>
+</resources>
