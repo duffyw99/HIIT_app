@@ -32,9 +32,6 @@ class WorkoutListViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /** Explicit method wrapper matching the requested name; equivalent to the [workouts] property. */
-    fun getWorkouts(): StateFlow<List<Workout>> = workouts
-
     fun deleteWorkout(id: String) {
         viewModelScope.launch {
             dao.getWorkoutById(id)?.let { dao.deleteWorkout(it) }

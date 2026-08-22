@@ -13,7 +13,6 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import androidx.core.content.pm.ServiceInfoCompat
 import com.example.intervaltimer.audio.AudioCueService
 import com.example.intervaltimer.data.StageType
 import com.example.intervaltimer.data.Workout
@@ -304,11 +303,15 @@ class WorkoutService : Service() {
     private fun startForegroundNotification(notification: Notification) {
         // API 34 requires foreground service TYPE to be declared both in the
         // manifest and here; ServiceCompat handles the pre-29 no-op case.
+        // Using the platform android.content.pm.ServiceInfo constant
+        // directly (not androidx.core.content.pm.ServiceInfoCompat) --
+        // it's been part of the Android SDK itself since API 29, so it
+        // can't have an AndroidX-version mismatch the way the wrapper did.
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
             notification,
-            ServiceInfoCompat.FOREGROUND_SERVICE_TYPE_LOCATION
+            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         )
     }
 

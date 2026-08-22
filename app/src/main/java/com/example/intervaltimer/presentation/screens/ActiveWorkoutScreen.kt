@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.intervaltimer.data.Workout
-import com.example.intervaltimer.domain.DurationType
+import com.example.intervaltimer.data.DurationType
 import com.example.intervaltimer.domain.ExecutionState
 import com.example.intervaltimer.presentation.WorkoutViewModel
 import com.example.intervaltimer.presentation.theme.AccentBrightGreen

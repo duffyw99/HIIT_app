@@ -89,9 +89,15 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
 
     // --- Room (local persistence) ---
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    // Room bumped 2.6.1 -> 2.7.2: 2.6.1 predates Room's KSP2/Kotlin 2.0+
+    // support and crashes ("unexpected jvm signature V" in
+    // JvmDescriptorUtilsKt) when processing against our current KSP
+    // 2.3.10 / Kotlin 2.4.10 toolchain. Stays on the same androidx.room
+    // package -- NOT the breaking Room 3.0 (androidx.room3) rename, which
+    // would require changing every @Entity/@Dao import across the project.
+    implementation("androidx.room:room-runtime:2.7.2")
+    implementation("androidx.room:room-ktx:2.7.2")
+    ksp("androidx.room:room-compiler:2.7.2")
 
     // --- Kotlin Coroutines ---
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
@@ -116,5 +122,5 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    androidTestImplementation("androidx.room:room-testing:2.7.2")
 }
