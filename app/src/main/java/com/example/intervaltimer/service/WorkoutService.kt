@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -197,8 +198,34 @@ class WorkoutService : Service() {
         distanceCollectorJob?.cancel()
 
         var lastStageId: String? = null
-        var lastCountdownValue = -1
         var hasFiredCompletion = false
+
+        // Fixed-cadence countdown: once a stage's remaining time/distance
+        // first crosses the threshold, play a short tone once per REAL
+        // second for 3 seconds -- on its own independent clock, not
+        // re-derived from further progress ticks. This matters for
+        // distance-based stages: GPS fixes arrive irregularly (sometimes
+        // skipping straight past 3/2/1, or sitting on one value for
+        // several real seconds), so deriving cue timing directly from
+        // countdownValue changes could miss beats or bunch them up.
+        // Time-based stages already tick at exactly 1Hz, so this produces
+        // identical results there -- no change for the common case.
+        //
+        // This job ONLY plays short beeps -- it never plays a transition
+        // tone itself. The long tone stays owned entirely by the simple
+        // "stage changed" check below, exactly as before this feature was
+        // added. That's a deliberate simplification: an earlier version
+        // tried to have the countdown's own natural end ALSO cover the
+        // transition tone, which required careful suppression logic to
+        // avoid double-firing when the countdown's end and the real
+        // transition coincide (the common case). Given real-time GPS isn't
+        // precise enough to make that coordination worth it -- a stage may
+        // end anywhere from ~5-10m before/after the countdown finishes --
+        // it's simpler and more robust to let ending-precision slide by
+        // that same small margin and never have two independent code paths
+        // racing to play the same tone.
+        var countdownJob: Job? = null
+        var countdownTriggeredForStageIndex = -1
 
         progressCollectorJob = serviceScope.launch {
             executor.progress.collect { snapshot ->
@@ -206,26 +233,45 @@ class WorkoutService : Service() {
 
                 // Stage transition tone: fires when currentStage changes,
                 // but not for the very first stage of the workout (no prior
-                // stage to transition FROM).
+                // stage to transition FROM). Sole source of this tone.
                 val stageId = snapshot.currentStage?.id
                 if (lastStageId != null && stageId != lastStageId) {
+                    // Stop any in-flight countdown rather than let stray
+                    // beeps play into a stage that's already moved on.
+                    countdownJob?.cancel()
+                    countdownJob = null
                     audioCueService.playStageTransitionTone()
+                    countdownTriggeredForStageIndex = -1
                 }
                 lastStageId = stageId
 
-                // Countdown tone: fires once per distinct countdown value
-                // (3, 2, 1), not once per progress tick -- distance-based
-                // stages poll every 200ms and would otherwise spam tones.
-                if (snapshot.isCountdown &&
-                    snapshot.countdownValue in 1..3 &&
-                    snapshot.countdownValue != lastCountdownValue
+                if (snapshot.executionState == ExecutionState.PAUSED) {
+                    // Cancel rather than let it continue silently ticking
+                    // toward a delayed beep; allow a clean fresh countdown
+                    // (3 again, not a resumed partial one) if still within
+                    // threshold once resumed.
+                    countdownJob?.cancel()
+                    countdownJob = null
+                    countdownTriggeredForStageIndex = -1
+                } else if (snapshot.isCountdown &&
+                    snapshot.executionState == ExecutionState.RUNNING &&
+                    snapshot.currentStageIndex != countdownTriggeredForStageIndex &&
+                    countdownJob == null
                 ) {
-                    audioCueService.playCountdownTone()
+                    countdownTriggeredForStageIndex = snapshot.currentStageIndex
+                    countdownJob = launch {
+                        repeat(3) {
+                            audioCueService.playCountdownTone()
+                            delay(1000L)
+                        }
+                        countdownJob = null
+                    }
                 }
-                lastCountdownValue = snapshot.countdownValue
 
                 if (snapshot.isWorkoutComplete && !hasFiredCompletion) {
                     hasFiredCompletion = true
+                    countdownJob?.cancel()
+                    countdownJob = null
                     audioCueService.playWorkoutCompletionSignal()
                     WorkoutStatePersistence.clear(applicationContext)
                     releaseWakeLock()
@@ -246,15 +292,32 @@ class WorkoutService : Service() {
     }
 
     /** Starts/stops GPS tracking to match whether the current stage actually needs it. */
-    private fun maybeStartGpsForCurrentStage() {
-        val stage = _progress.value.currentStage ?: return
-        val needsGps = stage.durationType == com.example.intervaltimer.data.DurationType.DISTANCE_BASED &&
-            _progress.value.executionState == ExecutionState.RUNNING
+    /**
+     * Tracks which stage index GPS was last reset for, so a reset fires
+     * whenever the CURRENT STAGE changes -- not just when transitioning
+     * from a non-distance stage to a distance one. Without this, two
+     * consecutive distance-based stages (e.g. distance Work into distance
+     * Rest) would never reset between them, since gpsTracker.isTracking
+     * stays true across that boundary -- the second stage would silently
+     * inherit the first stage's already-accumulated distance.
+     */
+    private var lastGpsResetStageIndex: Int = -1
 
-        if (needsGps && !gpsTracker.isTracking) {
-            gpsTracker.resetDistance()
-            gpsTracker.startTracking()
-        } else if (!needsGps && gpsTracker.isTracking) {
+    private fun maybeStartGpsForCurrentStage() {
+        val progress = _progress.value
+        val stage = progress.currentStage ?: return
+        val needsGps = stage.durationType == com.example.intervaltimer.data.DurationType.DISTANCE_BASED &&
+            progress.executionState == ExecutionState.RUNNING
+
+        if (needsGps) {
+            if (progress.currentStageIndex != lastGpsResetStageIndex) {
+                gpsTracker.resetDistance()
+                lastGpsResetStageIndex = progress.currentStageIndex
+            }
+            if (!gpsTracker.isTracking) {
+                gpsTracker.startTracking()
+            }
+        } else if (gpsTracker.isTracking) {
             gpsTracker.stopTracking()
         }
     }

@@ -110,7 +110,23 @@ fun ActiveWorkoutScreen(
             onResume = { viewModel.resumeWorkout() },
             onRestartRequested = { showRestartConfirm = true },
             onEndRequested = { showEndConfirm = true },
-            onDone = onFinished
+            // Bug fix: previously this was just `onDone = onFinished`, which
+            // only navigated away -- it never told WorkoutService to tear
+            // down. Since the service outlives this screen by design (it's
+            // a real Android Service, not scoped to this ViewModel), its
+            // executor stayed frozen at COMPLETED after a natural finish.
+            // Reopening ANY workout later rebound to that same still-running
+            // service and immediately inherited its stale COMPLETED state,
+            // permanently stuck on the "Done" screen with no path back to
+            // IDLE. Calling endWorkout() here (same as the End button does)
+            // triggers WorkoutService.stopSelf(), so the service is fully
+            // destroyed and recreated fresh -- via onCreate(), executor =
+            // null, progress defaulting to IDLE -- the next time any
+            // workout is started.
+            onDone = {
+                viewModel.endWorkout()
+                onFinished()
+            }
         )
     }
 

@@ -16,7 +16,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -31,9 +30,9 @@ import kotlin.math.sin
  * frequencies, this class synthesizes tones directly with [AudioTrack]
  * (16-bit PCM sine wave), which is the "OR" fallback the brief allowed for.
  *
- * Audio focus is requested as AUDIOFOCUS_GAIN_TRANSIENT (not exclusive) for
- * the ~200-500ms a tone plays, then immediately abandoned — this is what
- * lets other apps' audio continue uninterrupted (FR-10).
+ * Audio focus is requested as AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK (not
+ * exclusive) for the ~200-500ms a tone plays, then immediately abandoned —
+ * this is what lets other apps' audio continue uninterrupted (FR-10).
  */
 class AudioCueService(private val context: Context) {
 
@@ -79,25 +78,24 @@ class AudioCueService(private val context: Context) {
     }
 
     /**
-     * Sets cue volume independently of the user's media/alarm volume elsewhere
-     * on the device. [level] is 0-100; out-of-range values are clamped.
+     * Sets cue volume independently of the user's media volume elsewhere on
+     * the device. [level] is 0-100; out-of-range values are clamped.
+     *
+     * This only sets [volumePercent], which buildToneTrack() bakes directly
+     * into each tone's PCM sample amplitude at synthesis time -- that's
+     * always been the actual mechanism controlling perceived loudness, not
+     * any AudioManager stream-volume call. An earlier version of this
+     * method also nudged AudioManager.STREAM_ALARM's system volume, which
+     * only made sense while playback used USAGE_ALARM; now that playback
+     * uses USAGE_ASSISTANCE_SONIFICATION (see buildToneTrack/
+     * requestAudioFocus -- fixes tones playing on both a connected
+     * Bluetooth/wired output AND the phone speaker simultaneously, which is
+     * USAGE_ALARM's deliberate dual-output behavior for real alarms), that
+     * stream is no longer the one this audio plays through, so nudging it
+     * would do nothing.
      */
     fun setVolume(level: Int) {
         volumePercent = level.coerceIn(0, 100)
-
-        try {
-            val maxStreamVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-            val targetStreamVolume = ((volumePercent / 100.0) * maxStreamVolume)
-                .roundToInt()
-                .coerceIn(0, maxStreamVolume)
-
-            // flags = 0 (no FLAG_SHOW_UI): adjusting this shouldn't pop up the
-            // system volume overlay over whatever the user is looking at.
-            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, targetStreamVolume, 0)
-        } catch (e: SecurityException) {
-            // Some OEMs restrict STREAM_ALARM changes (e.g. Do Not Disturb policies).
-            Log.w(TAG, "Unable to set STREAM_ALARM volume", e)
-        }
     }
 
     /** Releases coroutine resources and any held audio focus. Call from onDestroy/service teardown. */
@@ -164,7 +162,7 @@ class AudioCueService(private val context: Context) {
         }
 
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM) // maps to STREAM_ALARM behavior
+            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION) // single-output routing (BT/wired if connected, else speaker)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
@@ -191,14 +189,31 @@ class AudioCueService(private val context: Context) {
     // Audio focus (Task 2)
     // =====================================================================
 
-    /** Requests transient, non-exclusive focus so other apps' playback is never paused (FR-10). */
+    /**
+     * Requests transient, non-exclusive focus so other apps' playback is
+     * never paused (FR-10).
+     *
+     * BUG FIX: this previously requested AUDIOFOCUS_GAIN_TRANSIENT, not
+     * AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK. That distinction matters a lot --
+     * plain TRANSIENT tells other apps "I need full attention briefly," and
+     * most media apps (Spotify, podcast players) respond to that by pausing
+     * outright, not ducking. MAY_DUCK tells them "you may just lower volume
+     * instead," which is what actually produces overlay-not-pause behavior.
+     * This also likely explains why the tone itself wasn't audible over
+     * Bluetooth: a full pause/resume cycle briefly tears down and
+     * re-establishes the A2DP audio route, and that renegotiation
+     * happening at the exact moment a short ~200ms tone tries to play is a
+     * plausible reason it got swallowed. Ducking keeps the Bluetooth
+     * connection continuously active (just quieter), avoiding that route
+     * churn entirely.
+     */
     private fun requestAudioFocus(): Boolean {
         val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
             .setAudioAttributes(attributes)
             .setWillPauseWhenDucked(false)
             .setOnAudioFocusChangeListener { /* no-op: cue is fire-and-forget, nothing to resume */ }

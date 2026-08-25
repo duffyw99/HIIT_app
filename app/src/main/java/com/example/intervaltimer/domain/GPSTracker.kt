@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationAvailability
@@ -126,13 +127,32 @@ class GPSTracker(private val context: Context) {
 
         val previous = lastAcceptedLocation
 
-        // Signal-loss handling (Section 5.6, FR-18): if too much time has
-        // passed since the last accepted fix, GPS was almost certainly
-        // unavailable in between (tunnel, dense tree cover, device stowed
-        // awkwardly, etc.). Rather than computing a large spurious jump
-        // across that gap, we treat this fix as reacquisition: rebase
-        // silently and resume accumulating from here.
+        // Rebase point: either establishing a NEW stage's starting position,
+        // or reacquiring GPS after a signal-loss gap (Section 5.6, FR-18).
+        //
+        // BUG FIX: FusedLocationProviderClient commonly delivers an
+        // already-cached last-known-location as the very FIRST callback
+        // after requestLocationUpdates() -- sometimes from minutes earlier,
+        // or from wherever the device was during a PREVIOUS stage, not
+        // where it actually is right now. Accepting that stale fix as the
+        // baseline unconditionally, then comparing it against the next
+        // genuinely fresh fix moments later, produced a large spurious
+        // "distance" reading almost instantly (e.g. a 70m stage reporting
+        // ~30m travelled before the user had actually moved).
+        //
+        // Fix: only accept a fix as the new baseline if it's actually
+        // recent, using the fix's own elapsedRealtimeNanos (set by the GPS
+        // chip when it computed the fix -- a monotonic clock immune to
+        // wall-clock adjustments, unlike Location.getTime()) compared
+        // against the current monotonic time. A stale/cached fix is
+        // discarded outright; we simply wait for the next callback rather
+        // than anchoring to it.
         if (previous == null || gapSinceLastFixMs > SIGNAL_LOSS_THRESHOLD_MS) {
+            val fixAgeMs = (SystemClock.elapsedRealtimeNanos() - newLocation.elapsedRealtimeNanos) / 1_000_000
+            if (fixAgeMs > MAX_BASELINE_FIX_AGE_MS) {
+                return
+            }
+
             lastAcceptedLocation = newLocation
             _signalAvailable.value = true
             return
@@ -189,6 +209,8 @@ class GPSTracker(private val context: Context) {
         private const val MIN_DISTANCE_METERS = 2.0f
         private const val MAX_ACCEPTABLE_ACCURACY_METERS = 20f
         private const val SIGNAL_LOSS_THRESHOLD_MS = 5000L
+        /** A candidate baseline fix older than this (per its own elapsedRealtimeNanos) is treated as a stale/cached location, not the device's actual current position. */
+        private const val MAX_BASELINE_FIX_AGE_MS = 2000L
         private const val EARTH_RADIUS_METERS = 6371000.0
     }
 }

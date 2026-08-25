@@ -30,7 +30,7 @@ android {
         minSdk = 26          // Section 2: minimum API level 26
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.3"
     }
 
     signingConfigs {
@@ -71,6 +71,36 @@ android {
     // the org.jetbrains.kotlin.plugin.compose plugin (added above) now
     // derives the correct Compose compiler version from the Kotlin
     // version automatically. Setting both would conflict.
+
+    // Renames every build's output APK from the generic "app-release.apk"
+    // to "<project name>-v<versionName>-<buildType>.apk", e.g.
+    // "HIIT_app-v1.0-release.apk", so old builds don't get silently
+    // overwritten if you copy one aside before running assembleRelease
+    // again. Runs for all variants (debug and release), not just release.
+    //
+    // NOTE: this does NOT indicate signing status in the filename (an
+    // earlier version tried to via variant.buildType.signingConfig, but
+    // that property doesn't resolve on this AGP's classic variant model --
+    // not worth chasing further for what's a purely cosmetic feature).
+    // To confirm a release build is actually signed, check that
+    // keystore.properties exists and is filled in BEFORE building, or just
+    // try `adb install` -- an unsigned APK fails to install outright.
+    //
+    // Uses the classic applicationVariants API, which depends on this
+    // project's android.newDsl=false opt-out (gradle.properties) staying
+    // active. If that opt-out is ever removed -- required no later than
+    // AGP 10.0 -- this block needs to migrate to the new Variant API:
+    // androidComponents { onVariants { variant -> variant.outputs.forEach
+    // { it.outputFileName.set(...) } } }. Not needed while the opt-out holds.
+    applicationVariants.all {
+        val variant = this
+        variant.outputs
+            .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
+            .forEach { output ->
+                output.outputFileName =
+                    "${rootProject.name}-v${variant.versionName}-${variant.buildType.name}.apk"
+            }
+    }
 }
 
 // android.kotlinOptions { jvmTarget = "17" } removed -- that setter is a
