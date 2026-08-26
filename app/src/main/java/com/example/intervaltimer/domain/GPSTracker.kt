@@ -62,6 +62,8 @@ class GPSTracker(private val context: Context) {
         private set
 
     private var lastAcceptedLocation: Location? = null
+    /** Set by resetDistance(); see handleNewLocation() for why this exists. */
+    private var baselineValidAfterElapsedRealtimeNanos: Long = 0L
     private var accumulatedDistanceMeters: Double = 0.0
     private var lastFixTimestampMs: Long = 0L
 
@@ -114,6 +116,10 @@ class GPSTracker(private val context: Context) {
         accumulatedDistanceMeters = 0.0
         _distanceFlow.value = 0.0
         lastAcceptedLocation = null
+        // Authoritative "this new measurement period starts NOW" marker.
+        // A fix computed before this moment cannot represent movement
+        // within this stage, by definition -- see handleNewLocation().
+        baselineValidAfterElapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
     }
 
     // =====================================================================
@@ -127,29 +133,43 @@ class GPSTracker(private val context: Context) {
 
         val previous = lastAcceptedLocation
 
-        // Rebase point: either establishing a NEW stage's starting position,
-        // or reacquiring GPS after a signal-loss gap (Section 5.6, FR-18).
-        //
-        // BUG FIX: FusedLocationProviderClient commonly delivers an
-        // already-cached last-known-location as the very FIRST callback
-        // after requestLocationUpdates() -- sometimes from minutes earlier,
-        // or from wherever the device was during a PREVIOUS stage, not
-        // where it actually is right now. Accepting that stale fix as the
-        // baseline unconditionally, then comparing it against the next
-        // genuinely fresh fix moments later, produced a large spurious
-        // "distance" reading almost instantly (e.g. a 70m stage reporting
-        // ~30m travelled before the user had actually moved).
-        //
-        // Fix: only accept a fix as the new baseline if it's actually
-        // recent, using the fix's own elapsedRealtimeNanos (set by the GPS
-        // chip when it computed the fix -- a monotonic clock immune to
-        // wall-clock adjustments, unlike Location.getTime()) compared
-        // against the current monotonic time. A stale/cached fix is
-        // discarded outright; we simply wait for the next callback rather
-        // than anchoring to it.
-        if (previous == null || gapSinceLastFixMs > SIGNAL_LOSS_THRESHOLD_MS) {
+        if (previous == null) {
+            // New stage's starting position (resetDistance() was just
+            // called). FusedLocationProviderClient commonly delivers an
+            // already-cached last-known-location as the very FIRST callback
+            // after requestLocationUpdates() -- sometimes from minutes
+            // earlier, or from wherever the device was during a PREVIOUS
+            // stage, not where it actually is right now. Accepting that
+            // stale fix as the baseline unconditionally, then comparing it
+            // against the next genuinely fresh fix moments later, produced
+            // a large spurious "distance" reading almost instantly (e.g. a
+            // 70m stage reporting ~30m travelled before the user had
+            // actually moved).
+            //
+            // Fix: only accept a fix as the new baseline if it was computed
+            // AT OR AFTER the exact moment resetDistance() declared this
+            // measurement period began -- an exact correctness check
+            // against our own authoritative timestamp, not a guessed
+            // freshness window. A fix from before that moment is discarded
+            // outright; we simply wait for the next callback.
+            if (newLocation.elapsedRealtimeNanos < baselineValidAfterElapsedRealtimeNanos) {
+                return
+            }
+
+            lastAcceptedLocation = newLocation
+            _signalAvailable.value = true
+            return
+        }
+
+        if (gapSinceLastFixMs > SIGNAL_LOSS_THRESHOLD_MS) {
+            // GPS signal was lost and just reacquired mid-stage (Section
+            // 5.6, FR-18) -- unlike the new-stage case above, there's no
+            // authoritative "this is when reacquisition should count from"
+            // timestamp available here, only an inferred gap. A threshold
+            // heuristic is the right tool for this specific case, even
+            // though an exact check was better for the new-stage case.
             val fixAgeMs = (SystemClock.elapsedRealtimeNanos() - newLocation.elapsedRealtimeNanos) / 1_000_000
-            if (fixAgeMs > MAX_BASELINE_FIX_AGE_MS) {
+            if (fixAgeMs > MAX_REACQUISITION_FIX_AGE_MS) {
                 return
             }
 
@@ -209,8 +229,8 @@ class GPSTracker(private val context: Context) {
         private const val MIN_DISTANCE_METERS = 2.0f
         private const val MAX_ACCEPTABLE_ACCURACY_METERS = 20f
         private const val SIGNAL_LOSS_THRESHOLD_MS = 5000L
-        /** A candidate baseline fix older than this (per its own elapsedRealtimeNanos) is treated as a stale/cached location, not the device's actual current position. */
-        private const val MAX_BASELINE_FIX_AGE_MS = 2000L
+        /** A reacquisition fix older than this (per its own elapsedRealtimeNanos) is treated as stale, not the device's actual current position -- used only for the signal-loss case, which has no better reference point available. */
+        private const val MAX_REACQUISITION_FIX_AGE_MS = 2000L
         private const val EARTH_RADIUS_METERS = 6371000.0
     }
 }
