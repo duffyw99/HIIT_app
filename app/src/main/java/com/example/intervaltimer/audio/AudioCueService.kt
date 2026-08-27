@@ -87,10 +87,10 @@ class AudioCueService(private val context: Context) {
      * any AudioManager stream-volume call. An earlier version of this
      * method also nudged AudioManager.STREAM_ALARM's system volume, which
      * only made sense while playback used USAGE_ALARM; now that playback
-     * uses USAGE_ASSISTANCE_SONIFICATION (see buildToneTrack/
-     * requestAudioFocus -- fixes tones playing on both a connected
-     * Bluetooth/wired output AND the phone speaker simultaneously, which is
-     * USAGE_ALARM's deliberate dual-output behavior for real alarms), that
+     * uses USAGE_MEDIA (see buildToneTrack/requestAudioFocus -- avoids
+     * USAGE_ALARM's dual-output behavior, i.e. playing on both a connected
+     * Bluetooth/wired output AND the phone speaker simultaneously, which
+     * is deliberate for real alarms but wrong here), that
      * stream is no longer the one this audio plays through, so nudging it
      * would do nothing.
      */
@@ -162,7 +162,7 @@ class AudioCueService(private val context: Context) {
         }
 
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION) // single-output routing (BT/wired if connected, else speaker)
+            .setUsage(AudioAttributes.USAGE_MEDIA) // same route as the app being overlaid - guaranteed to reach the same output device
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
@@ -193,23 +193,27 @@ class AudioCueService(private val context: Context) {
      * Requests transient, non-exclusive focus so other apps' playback is
      * never paused (FR-10).
      *
-     * BUG FIX: this previously requested AUDIOFOCUS_GAIN_TRANSIENT, not
-     * AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK. That distinction matters a lot --
-     * plain TRANSIENT tells other apps "I need full attention briefly," and
-     * most media apps (Spotify, podcast players) respond to that by pausing
-     * outright, not ducking. MAY_DUCK tells them "you may just lower volume
-     * instead," which is what actually produces overlay-not-pause behavior.
-     * This also likely explains why the tone itself wasn't audible over
-     * Bluetooth: a full pause/resume cycle briefly tears down and
-     * re-establishes the A2DP audio route, and that renegotiation
-     * happening at the exact moment a short ~200ms tone tries to play is a
-     * plausible reason it got swallowed. Ducking keeps the Bluetooth
-     * connection continuously active (just quieter), avoiding that route
-     * churn entirely.
+     * BUG FIX (part 1): this previously requested AUDIOFOCUS_GAIN_TRANSIENT,
+     * not AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK. Plain TRANSIENT tells other
+     * apps "I need full attention briefly," and most media apps (Spotify,
+     * podcast players) respond to that by pausing outright, not ducking.
+     * MAY_DUCK tells them "you may just lower volume instead," which
+     * fixed the pause-instead-of-duck symptom.
+     *
+     * BUG FIX (part 2): fixing the ducking above did NOT make the tone
+     * itself audible over Bluetooth -- audio focus and audio ROUTING are
+     * separate Android systems. Successfully holding focus (proven by
+     * Spotify correctly ducking) doesn't guarantee our own AudioTrack
+     * bytes reach the same output device. Many Bluetooth A2DP stacks only
+     * reliably route USAGE_MEDIA-tagged audio to the connected headset;
+     * USAGE_ASSISTANCE_SONIFICATION could get silently dropped rather than
+     * falling back anywhere audible. Switching to USAGE_MEDIA -- matching
+     * buildToneTrack()'s attributes below, and matching whatever app is
+     * actually being overlaid -- guarantees the same route.
      */
     private fun requestAudioFocus(): Boolean {
         val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+            .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
