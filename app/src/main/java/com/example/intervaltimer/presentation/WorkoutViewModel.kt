@@ -8,7 +8,6 @@ import android.os.IBinder
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.intervaltimer.data.StageType
 import com.example.intervaltimer.data.Workout
 import com.example.intervaltimer.domain.WorkoutProgress
 import com.example.intervaltimer.service.WorkoutService
@@ -31,8 +30,14 @@ class WorkoutViewModel(application: Application) : AndroidViewModel(application)
     private val _progress = MutableStateFlow(WorkoutProgress())
     val progress: StateFlow<WorkoutProgress> = _progress.asStateFlow()
 
+    /**
+     * Prefers the stage's user-supplied [com.example.intervaltimer.data.WorkoutStage.displayName]
+     * alias (e.g. "Sprint", "Jog") over the generic type label ("Work"),
+     * via WorkoutStage.resolvedDisplayName() -- shown in large font on
+     * ActiveWorkoutScreen per the interval-block refactor's requirement.
+     */
     val currentStageName: StateFlow<String> = progress
-        .map { it.currentStage?.type?.toDisplayName() ?: "Ready" }
+        .map { it.currentStage?.resolvedDisplayName() ?: "Ready" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Ready")
 
     val timerValue: StateFlow<Double> = progress
@@ -76,11 +81,4 @@ class WorkoutViewModel(application: Application) : AndroidViewModel(application)
         getApplication<Application>().unbindService(connection)
         super.onCleared()
     }
-}
-
-private fun StageType.toDisplayName(): String = when (this) {
-    StageType.PREP -> "Prep"
-    StageType.WORK -> "Work"
-    StageType.REST -> "Rest"
-    StageType.COOLDOWN -> "Cooldown"
 }

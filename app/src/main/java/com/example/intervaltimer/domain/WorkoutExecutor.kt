@@ -1,7 +1,7 @@
 package com.example.intervaltimer.domain
 
 import com.example.intervaltimer.data.DurationType
-import com.example.intervaltimer.data.StageType
+import com.example.intervaltimer.data.SequencedStage
 import com.example.intervaltimer.data.Workout
 import com.example.intervaltimer.data.WorkoutStage
 import kotlinx.coroutines.CoroutineScope
@@ -21,8 +21,14 @@ import kotlin.math.ceil
  * Drives a single [Workout] through its full stage sequence per Section 4.4.
  *
  * This class consumes [Workout.buildStageSequence] directly, so it has no
- * knowledge of intervals/finalRest itself — it just walks the flattened
- * Prep → (Work → Rest)×n → Cooldown list produced in Session 1.
+ * knowledge of intervals/finalRest/block-composition itself — it just walks
+ * the flattened Prep -> (interval block)xn -> Cooldown list, reading each
+ * entry's precomputed [SequencedStage.intervalNumber] rather than inferring
+ * "which repetition" from stage types. That inference (counting WORK-type
+ * stages seen so far) worked for the original fixed one-Work/one-Rest
+ * design but breaks once a block can contain multiple WORK stages -- e.g.
+ * a block of [Work "Sprint", Work "Jog", Rest] would have incremented the
+ * old counter twice per repetition instead of once.
  *
  * GPS is intentionally NOT implemented here (Session 3). For a
  * DISTANCE_BASED stage, this class does not measure distance itself —
@@ -41,8 +47,8 @@ class WorkoutExecutor(
         externalScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val ownsScope = externalScope == null
 
-    /** The full Prep → (Work → Rest)×n → Cooldown sequence, built once at construction. */
-    val stageSequence: List<WorkoutStage> = workout.buildStageSequence()
+    /** The full Prep -> (interval block)xn -> Cooldown sequence, built once at construction. */
+    val stageSequence: List<SequencedStage> = workout.buildStageSequence()
 
     private val _progress = MutableStateFlow(
         WorkoutProgress(totalStages = stageSequence.size, totalIntervals = workout.intervals)
@@ -82,7 +88,6 @@ class WorkoutExecutor(
     // Public controls (Task 3)
     // =====================================================================
 
-    /** Begins execution from the first stage. No-op if not IDLE. */
     /**
      * Begins execution. [fromStageIndex] defaults to 0 (normal start), but
      * can be set to jump directly into a later stage — used by
@@ -148,26 +153,14 @@ class WorkoutExecutor(
     private suspend fun runStageSequence(startIndex: Int) {
         _progress.update { it.copy(executionState = ExecutionState.RUNNING) }
 
-        // If resuming mid-sequence (restoration), the work/rest counter must
-        // reflect how many WORK stages occurred before startIndex, not just
-        // start at 0.
-        var workRestCounter = 0
-        for (i in 0 until startIndex) {
-            if (stageSequence[i].type == StageType.WORK) workRestCounter++
-        }
-
         for (index in startIndex until stageSequence.size) {
-            val stage = stageSequence[index]
-            if (stage.type == StageType.WORK) workRestCounter++
+            val sequencedStage = stageSequence[index]
 
-            val intervalForStage =
-                if (stage.type == StageType.WORK || stage.type == StageType.REST) workRestCounter else 0
+            beginStage(sequencedStage.stage, index, sequencedStage.intervalNumber)
 
-            beginStage(stage, index, intervalForStage)
-
-            when (stage.durationType) {
-                DurationType.TIME_BASED -> runTimeBasedStage(stage)
-                DurationType.DISTANCE_BASED -> runDistanceBasedStage(stage)
+            when (sequencedStage.stage.durationType) {
+                DurationType.TIME_BASED -> runTimeBasedStage(sequencedStage.stage)
+                DurationType.DISTANCE_BASED -> runDistanceBasedStage(sequencedStage.stage)
             }
 
             // end()/CANCELLED short-circuits the whole sequence immediately.

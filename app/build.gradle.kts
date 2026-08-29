@@ -30,7 +30,7 @@ android {
         minSdk = 26          // Section 2: minimum API level 26
         targetSdk = 34
         versionCode = 1
-        versionName = "1.4"
+        versionName = "1.5"
     }
 
     signingConfigs {

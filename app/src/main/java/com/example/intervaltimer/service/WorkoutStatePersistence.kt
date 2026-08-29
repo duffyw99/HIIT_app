@@ -1,11 +1,11 @@
 package com.example.intervaltimer.service
 
 import android.content.Context
-import com.example.intervaltimer.data.DurationType
-import com.example.intervaltimer.data.StageType
 import com.example.intervaltimer.data.Workout
-import com.example.intervaltimer.data.WorkoutStage
+import com.example.intervaltimer.data.toJsonObject
+import com.example.intervaltimer.data.toWorkoutStage
 import com.example.intervaltimer.domain.WorkoutProgress
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -98,49 +98,39 @@ object WorkoutStatePersistence {
     }
 
     // =====================================================================
-    // Manual JSON (de)serialization — Workout/WorkoutStage are plain data
-    // classes (Session 1) with no serialization framework attached.
+    // Manual JSON (de)serialization for Workout. WorkoutStage's own
+    // toJsonObject()/toWorkoutStage() are shared top-level functions
+    // defined in WorkoutModels.kt (also used by Room's TypeConverters
+    // there) -- reused here rather than duplicated.
     // =====================================================================
-
-    private fun WorkoutStage.toJson(): JSONObject = JSONObject().apply {
-        put("id", id)
-        put("type", type.name)
-        put("durationType", durationType.name)
-        put("durationInSeconds", durationInSeconds ?: JSONObject.NULL)
-        put("durationInMeters", durationInMeters ?: JSONObject.NULL)
-        put("displayUnit", displayUnit ?: JSONObject.NULL)
-    }
-
-    private fun JSONObject.toWorkoutStage(): WorkoutStage = WorkoutStage(
-        id = getString("id"),
-        type = StageType.valueOf(getString("type")),
-        durationType = DurationType.valueOf(getString("durationType")),
-        durationInSeconds = if (isNull("durationInSeconds")) null else getLong("durationInSeconds"),
-        durationInMeters = if (isNull("durationInMeters")) null else getDouble("durationInMeters"),
-        displayUnit = if (isNull("displayUnit")) null else getString("displayUnit")
-    )
 
     private fun Workout.toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("name", name)
-        put("prepStage", prepStage.toJson())
-        put("workStage", workStage.toJson())
-        put("restStage", restStage.toJson())
-        put("cooldownStage", cooldownStage.toJson())
+        put("prepStage", prepStage.toJsonObject())
+        put("intervalBlockStages", JSONArray().apply {
+            intervalBlockStages.forEach { put(it.toJsonObject()) }
+        })
+        put("cooldownStage", cooldownStage.toJsonObject())
         put("intervals", intervals)
         put("finalRest", finalRest)
         put("createdAtEpochMillis", createdAtEpochMillis)
     }
 
-    private fun JSONObject.toWorkout(): Workout = Workout(
-        id = getString("id"),
-        name = getString("name"),
-        prepStage = getJSONObject("prepStage").toWorkoutStage(),
-        workStage = getJSONObject("workStage").toWorkoutStage(),
-        restStage = getJSONObject("restStage").toWorkoutStage(),
-        cooldownStage = getJSONObject("cooldownStage").toWorkoutStage(),
-        intervals = getInt("intervals"),
-        finalRest = getBoolean("finalRest"),
-        createdAtEpochMillis = getLong("createdAtEpochMillis")
-    )
+    private fun JSONObject.toWorkout(): Workout {
+        val blockArray = getJSONArray("intervalBlockStages")
+        val blockStages = (0 until blockArray.length()).map { i ->
+            blockArray.getJSONObject(i).toWorkoutStage()
+        }
+        return Workout(
+            id = getString("id"),
+            name = getString("name"),
+            prepStage = getJSONObject("prepStage").toWorkoutStage(),
+            intervalBlockStages = blockStages,
+            cooldownStage = getJSONObject("cooldownStage").toWorkoutStage(),
+            intervals = getInt("intervals"),
+            finalRest = getBoolean("finalRest"),
+            createdAtEpochMillis = getLong("createdAtEpochMillis")
+        )
+    }
 }

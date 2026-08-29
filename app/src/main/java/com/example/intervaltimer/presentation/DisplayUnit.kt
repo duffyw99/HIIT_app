@@ -32,24 +32,37 @@ enum class DisplayUnit(val label: String, val durationType: DurationType, val to
  * Parses [rawText] under [unit] and builds a WorkoutStage in canonical
  * units. Returns null on invalid/negative input so the caller can show a
  * validation error instead of crashing.
+ *
+ * [displayName] is the optional user-supplied alias (e.g. "Sprint") for
+ * this stage; blank/whitespace-only input is normalized to null so
+ * WorkoutStage.resolvedDisplayName() correctly falls back to the generic
+ * type label rather than displaying an empty string.
  */
-fun buildWorkoutStage(stageType: StageType, rawText: String, unit: DisplayUnit): WorkoutStage? {
+fun buildWorkoutStage(
+    stageType: StageType,
+    rawText: String,
+    unit: DisplayUnit,
+    displayName: String? = null
+): WorkoutStage? {
     val inputValue = rawText.toDoubleOrNull() ?: return null
     if (inputValue < 0) return null
     val canonical = inputValue * unit.toCanonicalFactor
+    val normalizedDisplayName = displayName?.trim()?.takeIf { it.isNotEmpty() }
 
     return when (unit.durationType) {
         DurationType.TIME_BASED -> WorkoutStage(
             type = stageType,
             durationType = DurationType.TIME_BASED,
             durationInSeconds = round(canonical).toLong(),
-            displayUnit = unit.name
+            displayUnit = unit.name,
+            displayName = normalizedDisplayName
         )
         DurationType.DISTANCE_BASED -> WorkoutStage(
             type = stageType,
             durationType = DurationType.DISTANCE_BASED,
             durationInMeters = canonical,
-            displayUnit = unit.name
+            displayUnit = unit.name,
+            displayName = normalizedDisplayName
         )
     }
 }

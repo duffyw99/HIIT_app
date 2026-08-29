@@ -14,7 +14,6 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.example.intervaltimer.audio.AudioCueService
-import com.example.intervaltimer.data.StageType
 import com.example.intervaltimer.data.Workout
 import com.example.intervaltimer.domain.ExecutionState
 import com.example.intervaltimer.domain.GPSTracker
@@ -399,7 +398,7 @@ class WorkoutService : Service() {
      * default system styling isn't good enough in practice.
      */
     private fun buildNotification(progress: WorkoutProgress): Notification {
-        val stageName = progress.currentStage?.type?.let(::displayNameForStage) ?: "Interval Timer"
+        val stageName = progress.currentStage?.resolvedDisplayName() ?: "Interval Timer"
         val subtext = buildSubtext(progress)
 
         val contentIntent = PendingIntent.getActivity(
@@ -454,13 +453,6 @@ class WorkoutService : Service() {
         val minutes = totalSeconds / 60
         val seconds = totalSeconds % 60
         return String.format("%d:%02d remaining", minutes, seconds)
-    }
-
-    private fun displayNameForStage(type: StageType): String = when (type) {
-        StageType.PREP -> "Prep"
-        StageType.WORK -> "Work"
-        StageType.REST -> "Rest"
-        StageType.COOLDOWN -> "Cooldown"
     }
 
     private fun actionPendingIntent(action: String): PendingIntent {

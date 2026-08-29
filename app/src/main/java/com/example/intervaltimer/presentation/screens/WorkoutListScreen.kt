@@ -247,7 +247,7 @@ private fun DeleteConfirmationDialog(
  * Creator/Editor concern (Session 8), not this list view's job.
  */
 private fun stageSummary(workout: Workout): String {
-    fun formatStage(label: String, stage: WorkoutStage): String {
+    fun formatStage(stage: WorkoutStage, label: String = stage.resolvedDisplayName()): String {
         val value = when (stage.durationType) {
             DurationType.TIME_BASED -> formatMmSs(stage.durationInSeconds ?: 0L)
             DurationType.DISTANCE_BASED -> "${stage.durationInMeters?.toInt() ?: 0}m"
@@ -255,12 +255,25 @@ private fun stageSummary(workout: Workout): String {
         return "$label $value"
     }
 
-    return listOf(
-        formatStage("Prep", workout.prepStage),
-        formatStage("Work", workout.workStage),
-        formatStage("Rest", workout.restStage),
-        formatStage("Cooldown", workout.cooldownStage)
-    ).joinToString(" • ")
+    // Prep/Cooldown keep their fixed bookend labels; each interval block
+    // stage uses its own resolvedDisplayName() (alias if set, else "Work"/
+    // "Rest") since a block can now contain several distinctly-named
+    // stages (e.g. "Sprint", "Jog") rather than one fixed Work + one Rest.
+    // Truncated at 4 block stages so a large block (up to
+    // Workout.MAX_INTERVAL_BLOCK_STAGES = 20) doesn't produce an
+    // unreadably long summary line on this compact card -- full detail is
+    // always visible on the Creator/Edit screen.
+    val parts = mutableListOf(formatStage(workout.prepStage, "Prep"))
+    val blockStageSummaries = workout.intervalBlockStages.map { formatStage(it) }
+    if (blockStageSummaries.size <= 4) {
+        parts.addAll(blockStageSummaries)
+    } else {
+        parts.addAll(blockStageSummaries.take(4))
+        parts.add("+${blockStageSummaries.size - 4} more")
+    }
+    parts.add(formatStage(workout.cooldownStage, "Cooldown"))
+
+    return parts.joinToString(" • ")
 }
 
 private fun formatMmSs(totalSeconds: Long): String {
