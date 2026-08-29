@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 /**
  * Schema version bumped 1 -> 2 for the interval-block refactor: Workout's
- * columns changed fundamentally (work_*/rest_* embedded columns removed,
+ * columns changed fundamentally (work_x/rest_x embedded columns removed,
  * replaced by a single intervalBlockStages JSON column). Uses
  * fallbackToDestructiveMigration() rather than a real Migration object --
  * reasonable for a personal, actively-developed, sideloaded app with no
